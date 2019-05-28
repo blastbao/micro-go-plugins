@@ -227,7 +227,7 @@ func (r *rbroker) Subscribe(topic string, handler broker.Handler, opts ...broker
 		if err == nil && ackSuccess && !opt.AutoAck {
 			msg.Ack(false)
 		} else if err != nil && !opt.AutoAck {
-			msg.Nack(false, requeueOnError)
+// 			msg.Nack(false, requeueOnError)
 		}
 	}
 
