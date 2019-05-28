@@ -193,8 +193,8 @@ func (r *rbroker) Subscribe(topic string, handler broker.Handler, opts ...broker
 		ctx = subscribeContext
 	}
 
-	requeueOnError := false
-	requeueOnError, _ = ctx.Value(requeueOnErrorKey{}).(bool)
+// 	requeueOnError := false
+// 	requeueOnError, _ = ctx.Value(requeueOnErrorKey{}).(bool)
 
 	durableQueue := false
 	durableQueue, _ = ctx.Value(durableQueueKey{}).(bool)
