@@ -1,4 +1,4 @@
-module go.weixiaolv.cn/open/micro-go-plugins
+module github.com/weixiaolv/micro-go-plugins
 
 require (
 	cloud.google.com/go v0.37.2
