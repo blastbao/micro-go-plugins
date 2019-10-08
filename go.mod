@@ -50,6 +50,7 @@ require (
 	github.com/micro/go-config v1.1.0
 	github.com/micro/go-log v0.1.0
 	github.com/micro/go-micro v1.1.0
+	github.com/micro/go-plugins v0.25.0
 	github.com/micro/go-rcache v0.3.0
 	github.com/micro/micro v1.1.1
 	github.com/micro/util v0.2.0

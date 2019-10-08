@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/micro/go-log"
 	"github.com/micro/go-micro/broker"
-	"github.com/micro/go-micro/cmd"
+	""github.com/micro/go-micro/config/cmd"
 )
 
 const (

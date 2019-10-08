@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 
-	"github.com/micro/go-micro/cmd"
+	""github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/transport"
 )
 

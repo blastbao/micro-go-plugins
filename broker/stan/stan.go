@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/micro/go-log"
 	"github.com/micro/go-micro/broker"
-	"github.com/micro/go-micro/cmd"
+	""github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/codec/json"
 	stan "github.com/nats-io/go-nats-streaming"
 )

@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/micro/go-micro/broker"
-	"github.com/micro/go-micro/cmd"
+	""github.com/micro/go-micro/config/cmd"
 )
 
 type sidecar struct {
