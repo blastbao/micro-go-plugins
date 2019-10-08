@@ -1,9 +1,10 @@
 module github.com/weixiaolv/micro-go-plugins
 
+go 1.12
+
 require (
 	cloud.google.com/go v0.37.2
 	contrib.go.opencensus.io/exporter/ocagent v0.4.11 // indirect
-	github.com/99designs/gqlgen v0.7.2 // indirect
 	github.com/Azure/azure-sdk-for-go v27.0.0+incompatible // indirect
 	github.com/Azure/azure-storage-blob-go v0.6.0 // indirect
 	github.com/DataDog/datadog-go v0.0.0-20190405105943-4a998718e1d2 // indirect
@@ -74,7 +75,6 @@ require (
 	github.com/streadway/amqp v0.0.0-20190404075320-75d898a42a94
 	github.com/stretchr/testify v1.3.0
 	github.com/tinylib/msgp v1.1.0
-	go.etcd.io/bbolt v1.3.2 // indirect
 	go.etcd.io/etcd v3.3.12+incompatible
 	go.opencensus.io v0.20.0
 	go.uber.org/ratelimit v0.0.0-20180316092928-c15da0234277
