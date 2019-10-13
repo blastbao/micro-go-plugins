@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/micro/go-log"
 	"github.com/micro/go-micro/broker"
-	""github.com/micro/go-micro/config/cmd"
+	"github.com/micro/go-micro/config/cmd"
 	merr "github.com/micro/go-micro/errors"
 	"github.com/micro/go-micro/registry"
 	proto "github.com/micro/go-plugins/broker/grpc/proto"
