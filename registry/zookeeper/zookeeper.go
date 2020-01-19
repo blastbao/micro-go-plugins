@@ -18,10 +18,42 @@ var (
 	prefix = "/micro-registry"
 )
 
+
+// zookeeperRegistry 实现了 micro.Registry 接口，能够提供服务发现能力。
+//
+//	type Registry interface {
+//
+//		Init(...Option) error
+//
+//		Options() Options
+//
+//		Register(*Service, ...RegisterOption) error
+//
+//		Deregister(*Service) error
+//
+//		GetService(string) ([]*Service, error)
+//
+//		ListServices() ([]*Service, error)
+//
+//		Watch(...WatchOption) (Watcher, error)
+//
+//		String() string
+//
+//	}
+
+
 type zookeeperRegistry struct {
+
+	// zk 连接
 	client  *zk.Conn
+
+	// 配置项：zk addresses, dial timeout, others
 	options registry.Options
+
+	// 锁用于保护 register
 	sync.Mutex
+
+	// 保存了 < 服务名，hash 值 >
 	register map[string]uint64
 }
 
@@ -29,7 +61,14 @@ func init() {
 	cmd.DefaultRegistries["zookeeper"] = NewRegistry
 }
 
+// configure() 函数的功能和 NewRegistry() 基本一致，它用来确保当前 zk 连接有效，同时会更新 z.options 中的一些配置。
+//
+// 1. 检查超时配置是否为空，若是则置为默认值 5
+// 2. 检查 zkConn 是否为 nil, 若是则需重连
+// 3. 检查 zk 地址列表是否有变更，若是则需重连
+// 4. 执行重连（类似于 NewRegistry 函数的行为）
 func configure(z *zookeeperRegistry, opts ...registry.Option) error {
+
 	cAddrs := z.options.Addrs
 
 	for _, o := range opts {
@@ -59,6 +98,8 @@ func configure(z *zookeeperRegistry, opts ...registry.Option) error {
 		cAddrs = []string{"127.0.0.1:2181"}
 	}
 
+
+
 	// connect to zookeeper
 	c, _, err := zk.Connect(cAddrs, time.Second*z.options.Timeout)
 	if err != nil {
@@ -74,17 +115,24 @@ func configure(z *zookeeperRegistry, opts ...registry.Option) error {
 	return nil
 }
 
+
+
 func (z *zookeeperRegistry) Init(opts ...registry.Option) error {
+	// configure() 函数用来确保当前 zk 连接有效，同时更新 z.options 中的一些配置。
 	return configure(z, opts...)
 }
+
 
 func (z *zookeeperRegistry) Options() registry.Options {
 	return z.options
 }
 
+
+// 注销服务
 func (z *zookeeperRegistry) Deregister(s *registry.Service) error {
+
 	if len(s.Nodes) == 0 {
-		return errors.New("Require at least one node")
+		return errors.New("require at least one node")
 	}
 
 	// delete our hash of the service
@@ -92,8 +140,10 @@ func (z *zookeeperRegistry) Deregister(s *registry.Service) error {
 	delete(z.register, s.Name)
 	z.Unlock()
 
+	// 遍历 zk 中 s.Name 路径下的所有节点，逐个清除。
 	for _, node := range s.Nodes {
-		err := z.client.Delete(nodePath(s.Name, node.Id), -1)
+		// 从 zk 中删除目标节点。
+		err := z.client.Delete(nodePath(s.Name, node.Id), -1) // nodePath(s.Name, node.Id) 把服务名 s.Name 和节点ID node.Id 拼接成 zk 子路径，该路径代表一个可用节点。
 		if err != nil {
 			return err
 		}
@@ -102,7 +152,20 @@ func (z *zookeeperRegistry) Deregister(s *registry.Service) error {
 	return nil
 }
 
+
+
+
+// 注册服务
+
+// 计算 s 的 hash 值，记为 h
+// 检查 s 是否已经注册，若已经注册且hash值未发生改变，则已经注册，直接返回
+// 将 h 添加到 z.register[s.Name] 里保存起来
+//
+//
+//
+//
 func (z *zookeeperRegistry) Register(s *registry.Service, opts ...registry.RegisterOption) error {
+
 	if len(s.Nodes) == 0 {
 		return errors.New("Require at least one node")
 	}
@@ -273,6 +336,15 @@ func (z *zookeeperRegistry) Watch(opts ...registry.WatchOption) (registry.Watche
 	return newZookeeperWatcher(z, opts...)
 }
 
+
+
+
+// 流程：
+// 	初始化 addrs、connect timeout
+// 	建立 zk.Conn
+// 	创建 zk 根目录
+// 	返回 zookeeperRegistry 结构体指针
+
 func NewRegistry(opts ...registry.Option) registry.Registry {
 	var options registry.Options
 	for _, o := range opts {
@@ -305,6 +377,7 @@ func NewRegistry(opts ...registry.Option) registry.Registry {
 	if err := createPath(prefix, []byte{}, c); err != nil {
 		log.Fatal(err)
 	}
+
 
 	return &zookeeperRegistry{
 		client:   c,
