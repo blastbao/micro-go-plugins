@@ -26,7 +26,7 @@ func nodePath(s, id string) string {
 	//
 	// service_name := "live/admin/test/id" => "live-admin-test-id"
 	// node_id := "docker1/process2" 	=> "docker1-process2"
-	// path := "live-admin-test-id/docker1-process2"
+	// path := "prefix/live-admin-test-id/docker1-process2"
 
 	service := strings.Replace(s, "/", "-", -1)
 	node := strings.Replace(id, "/", "-", -1)

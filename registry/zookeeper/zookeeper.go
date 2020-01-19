@@ -175,11 +175,16 @@ func (z *zookeeperRegistry) Register(s *registry.Service, opts ...registry.Regis
 		o(&options)
 	}
 
+
+	// 1
+
 	// create hash of service; uint64
 	h, err := hash.Hash(s, nil)
 	if err != nil {
 		return err
 	}
+
+	// 2
 
 	// get existing hash
 	z.Lock()
@@ -191,6 +196,7 @@ func (z *zookeeperRegistry) Register(s *registry.Service, opts ...registry.Regis
 		return nil
 	}
 
+	// 拷贝 s 为 service
 	service := &registry.Service{
 		Name:      s.Name,
 		Version:   s.Version,
@@ -198,30 +204,42 @@ func (z *zookeeperRegistry) Register(s *registry.Service, opts ...registry.Regis
 		Endpoints: s.Endpoints,
 	}
 
+	// 遍历 s.Nodes ，若存在则更新内容，若不存在则创建
 	for _, node := range s.Nodes {
+
 		service.Nodes = []*registry.Node{node}
+
+
+		// 检查 "prefix/server-name/node-id" 是否已经存在
 		exists, _, err := z.client.Exists(nodePath(service.Name, node.Id))
 		if err != nil {
 			return err
 		}
 
+		// 序列化 service 为 data
 		srv, err := encode(service)
 		if err != nil {
 			return err
 		}
 
+		// 若 "prefix/server-name/node-id" 已经存在，则设置（Set）该路径存储数据为 `srv`
 		if exists {
 			_, err := z.client.Set(nodePath(service.Name, node.Id), srv, -1)
 			if err != nil {
 				return err
 			}
+
+		// 否则，创建 "prefix/server-name/node-id" 路径同时保存数据为 `srv`
 		} else {
 			err := createPath(nodePath(service.Name, node.Id), srv, z.client)
 			if err != nil {
 				return err
 			}
 		}
+
 	}
+
+	// 注册 hash 值到 map 中
 
 	// save our hash of the service
 	z.Lock()
@@ -335,9 +353,6 @@ func (z *zookeeperRegistry) String() string {
 func (z *zookeeperRegistry) Watch(opts ...registry.WatchOption) (registry.Watcher, error) {
 	return newZookeeperWatcher(z, opts...)
 }
-
-
-
 
 // 流程：
 // 	初始化 addrs、connect timeout

@@ -8,12 +8,17 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+
+
+
 type zookeeperWatcher struct {
 	wo      registry.WatchOptions
 	client  *zk.Conn
 	stop    chan bool
 	results chan result
 }
+
+
 
 type watchResponse struct {
 	event   zk.Event
@@ -25,6 +30,7 @@ type result struct {
 	res *registry.Result
 	err error
 }
+
 
 func newZookeeperWatcher(r *zookeeperRegistry, opts ...registry.WatchOption) (registry.Watcher, error) {
 	var wo registry.WatchOptions
