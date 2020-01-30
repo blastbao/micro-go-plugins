@@ -303,6 +303,7 @@ func (z *zookeeperRegistry) GetService(name string) ([]*registry.Service, error)
 }
 
 func (z *zookeeperRegistry) ListServices() ([]*registry.Service, error) {
+
 	srv, _, err := z.client.Children(prefix)
 	if err != nil {
 		return nil, err
@@ -357,8 +358,8 @@ func (z *zookeeperRegistry) Watch(opts ...registry.WatchOption) (registry.Watche
 // 流程：
 // 	初始化 addrs、connect timeout
 // 	建立 zk.Conn
-// 	创建 zk 根目录
-// 	返回 zookeeperRegistry 结构体指针
+// 	创建 zk 根目录，该目录的完整路径保存在变量 prefix 中
+// 	创建&初始化 zookeeperRegistry 结构体对象，返回对象指针
 
 func NewRegistry(opts ...registry.Option) registry.Registry {
 	var options registry.Options
@@ -392,7 +393,6 @@ func NewRegistry(opts ...registry.Option) registry.Registry {
 	if err := createPath(prefix, []byte{}, c); err != nil {
 		log.Fatal(err)
 	}
-
 
 	return &zookeeperRegistry{
 		client:   c,

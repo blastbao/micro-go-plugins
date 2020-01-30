@@ -4,6 +4,9 @@ import (
 	"errors"
 	"path"
 
+
+
+
 	"github.com/micro/go-micro/registry"
 	"github.com/samuel/go-zookeeper/zk"
 )
@@ -11,10 +14,23 @@ import (
 
 
 
+// zookeeperWatcher 实现了 micro.Watcher 接口，能够获取注册在 registry 中的服务（services）的更新信息。
+//
+//	type Watcher interface {
+//		Next() (*Result, error)   	// Next() 是阻塞式的调用
+//		Stop() 						// Stop()
+//	}
+
+
 type zookeeperWatcher struct {
 	wo      registry.WatchOptions
 	client  *zk.Conn
+
+
+	// 退出信号
 	stop    chan bool
+
+
 	results chan result
 }
 
@@ -50,37 +66,55 @@ func newZookeeperWatcher(r *zookeeperRegistry, opts ...registry.WatchOption) (re
 }
 
 func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
+
+
 	for {
-		// get current children for a key
-		children, _, childEventCh, err := zw.client.ChildrenW(key)
+
+		// 获取 key 下的 children, stats, 以及用于监听子节点变更事件的 childEventCh 管道。
+		children, _, childEventCh, err := zw.client.ChildrenW(key)	// 注：zk.ChildrenW() 相当于调用了 zk.Children() 和 zk.addWatcher()。
 		if err != nil {
+			// 若报错，意味着无法读取 key 的 children，返回错误信息 err
 			respChan <- watchResponse{zk.Event{}, nil, err}
 			return
 		}
 
+
 		select {
+
+		// 监听事件（阻塞式）
 		case e := <-childEventCh:
+
+			// 只关注 "子节点变更" 事件，忽略其它事件，注：任何事件的发生都会导致 continue ，从而开始新的 for 循环
 			if e.Type != zk.EventNodeChildrenChanged {
 				continue
 			}
 
+			// 重新获取变更后的子节点列表
 			newChildren, _, err := zw.client.Children(e.Path)
 			if err != nil {
 				respChan <- watchResponse{e, nil, err}
 				return
 			}
 
+
 			// a node was added -- watch the new node
+
+			// 遍历新的子节点列表
 			for _, i := range newChildren {
+
+				// 检查当前子节点是否是旧的节点，若是，则忽略
 				if contains(children, i) {
 					continue
 				}
 
+				// 如果当前节点是新增节点，则构造新节点的完整路径 newNode，以便于监听
 				newNode := path.Join(e.Path, i)
 
 				if key == prefix {
+
 					// a new service was created under prefix
 					go zw.watchDir(newNode, respChan)
+
 
 					nodes, _, _ := zw.client.Children(newNode)
 					for _, node := range nodes {
@@ -97,7 +131,11 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 						respChan <- watchResponse{e, srv, err}
 					}
 				} else {
+
+
 					go zw.watchKey(newNode, respChan)
+
+
 					s, _, err := zw.client.Get(newNode)
 					e.Type = zk.EventNodeCreated
 
@@ -206,6 +244,9 @@ func (zw *zookeeperWatcher) watch() {
 		zw.results <- result{&registry.Result{Action: action, Service: service}, nil}
 	}
 }
+
+
+
 
 func (zw *zookeeperWatcher) Stop() {
 	select {

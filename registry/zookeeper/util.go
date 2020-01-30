@@ -48,7 +48,7 @@ func servicePath(s string) string {
 func createPath(path string, data []byte, client *zk.Conn) error {
 
 
-	// 是否已经存在，若是则无需创建，直接返回
+	// path 是否已经存在，若是则无需创建，直接返回
 	exists, _, err := client.Exists(path)
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func createPath(path string, data []byte, client *zk.Conn) error {
 		return nil
 	}
 
-	// 逐级目录创建
+	// 拆分 path ，逐级创建父目录
 
 	name := "/"
 	p := strings.Split(path, "/")
@@ -67,6 +67,7 @@ func createPath(path string, data []byte, client *zk.Conn) error {
 		name += v
 		e, _, _ := client.Exists(name)
 		if !e {
+			// 逐层创建
 			_, err = client.Create(name, []byte{}, int32(0), zk.WorldACL(zk.PermAll))
 			if err != nil {
 				return err
@@ -75,6 +76,7 @@ func createPath(path string, data []byte, client *zk.Conn) error {
 		name += "/"
 	}
 
+	// 至此，父路径都已存在，可以创建最终的完整路径
 	_, err = client.Create(path, data, int32(0), zk.WorldACL(zk.PermAll))
 	return err
 }
