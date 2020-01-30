@@ -23,7 +23,11 @@ import (
 
 
 type zookeeperWatcher struct {
+
+
 	wo      registry.WatchOptions
+
+
 	client  *zk.Conn
 
 
@@ -65,6 +69,16 @@ func newZookeeperWatcher(r *zookeeperRegistry, opts ...registry.WatchOption) (re
 	return zw, nil
 }
 
+
+
+
+// 目录节点下存储了一组子节点
+//
+// 1. 获取目录节点 key 下所有子节点 children 并添加 watcher
+// 2. 阻塞式监听事件到达
+// 3. 如果事件发生，....
+
+
 func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 
 
@@ -86,7 +100,7 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 		// 监听事件（阻塞式）
 		case e := <-childEventCh:
 
-			// 只关注 "子节点变更" 事件，忽略其它事件，注：任何事件的发生都会导致 continue ，从而开始新的 for 循环
+			// 只关注 "子节点变更" 事件，忽略其它事件，注：任何事件的发生都会导致 watcher 失效 ，需要开始新的循环来添加 watcher，所以这里调用 continue
 			if e.Type != zk.EventNodeChildrenChanged {
 				continue
 			}
@@ -98,8 +112,7 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 				return
 			}
 
-
-			// a node was added -- watch the new node
+			// 检查是否有新增节点，若果有，则 watch 它，否则忽略
 
 			// 遍历新的子节点列表
 			for _, i := range newChildren {
@@ -109,19 +122,39 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 					continue
 				}
 
-				// 如果当前节点是新增节点，则构造新节点的完整路径 newNode，以便于监听
+
+				// 至此，当前子节点 child 一定是新增节点，
+				//（1）对于 "key == prefix" 情况，新增节点意味着有新注册的服务
+				//（2）对于 "key != prefix" 情况，新增节点意味着某服务下有新增加的节点信息(ip+port)
+
+
+				// 构造节点的完整路径 newNode
 				newNode := path.Join(e.Path, i)
+
+
+				// 如果 key 是根目录(prefix)，则其 children 仍旧是目录节点，每个 child 对应了一个独立的服务，
+				// 例如在 "services/livechat-room-test-ph" 中，prefix 是 "services"，"livechat-room-test-ph" 是一个 child 。
+				//
+				// 此时，不仅需要监听 children 目录节点，对于 child 下的每个内容节点，也需要监听。
 
 				if key == prefix {
 
+
+					// 递归调用 zw.watchDir()，在该调用中会走到下面的 else 分支，
+					//
 					// a new service was created under prefix
 					go zw.watchDir(newNode, respChan)
 
 
+					// 获取 child 下的所有内容节点，逐个监听、解析、发送...
 					nodes, _, _ := zw.client.Children(newNode)
 					for _, node := range nodes {
+
+						// 监听
 						n := path.Join(newNode, node)
 						go zw.watchKey(n, respChan)
+
+						// 反序列化
 						s, _, err := zw.client.Get(n)
 						e.Type = zk.EventNodeCreated
 
@@ -130,19 +163,23 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 							continue
 						}
 
+						// 发送
 						respChan <- watchResponse{
 							event: e,			// 变更事件 zk.Event
 							service: srv,		// 服务信息 registry.Service
 							err: nil, 			// 错误信息
 						}
-
 					}
+
+
+				// 如果 key 不是根目录(prefix)，则其 children 是内容节点，每个 child 对应了一个服务节点信息(end_point)，
+				// 这里，需要对每个 child 进行监听、解析、发送...
 				} else {
 
-
+					// 监听
 					go zw.watchKey(newNode, respChan)
 
-
+					// 解析
 					s, _, err := zw.client.Get(newNode)
 					e.Type = zk.EventNodeCreated
 
@@ -151,7 +188,7 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 						continue
 					}
 
-
+					// 发送
 					respChan <- watchResponse{
 						event: e,			// 变更事件 zk.Event
 						service: srv,		// 服务信息 registry.Service
@@ -172,18 +209,19 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 
 // 内容节点存储了 registry.Service 结构体序列化后的字节序列。
 //
-//
-//
+// 1. 获取节点内容 s 并添加 watcher
+// 2. 阻塞式监听事件到达
+// 3. 如果事件发生，将 事件信息 和 节点内容 发送到监听管道中，并重新添加 watcher 进行监听
+// 4. 如果发生了 节点删除事件、stop信号，则退出监听
 
 func (zw *zookeeperWatcher) watchKey(key string, respChan chan watchResponse) {
-
-
 
 	// 注意，这里 for 循环的目的是，由于 zk 中 watcher 是一次性的，当有事件触发 watcher 后，
 	// 该 watch 即刻失效。因此，如果想不断监听某节点上的事件，需要在每次事件触发后重新添加 watcher 。
 
 	for {
 
+		// 1. 获取节点内容 s 并添加 watcher
 		// GetW returns the contents of a znode and sets a watch
 		s, _, keyEventCh, err := zw.client.GetW(key)
 		if err != nil {
@@ -191,11 +229,12 @@ func (zw *zookeeperWatcher) watchKey(key string, respChan chan watchResponse) {
 			return
 		}
 
+		// 2. 阻塞式监听事件到达
 		select {
 
 		// 事件监听：
-		// （1）对于 `数据变更`，`节点新增` 事件，需要重新获取变更后的节点内容 srv，并写入监听管道，然后继续 for 循环。
-		// （2）对于 `节点删除` 事件，则无需（也无法）获取变更后节点内容，直接将事件写入监听管道，并 return 退出 for 循环。
+		// （1）对于 `数据变更`，`节点新增` 事件，需要重新获取变更后的节点内容 srv，并将事件写入监听管道，然后继续 for 循环进行事件监听。
+		// （2）对于 `节点删除` 事件，则无需（也无法）获取变更后节点内容，直接将事件写入监听管道，并 return 退出监听。
 
 		case e := <-keyEventCh:
 
@@ -237,38 +276,51 @@ func (zw *zookeeperWatcher) watchKey(key string, respChan chan watchResponse) {
 	}
 }
 
+
+
+
 func (zw *zookeeperWatcher) watch() {
+
 	watchPath := prefix
+
 	if len(zw.wo.Service) > 0 {
 		watchPath = servicePath(zw.wo.Service)
 	}
 
-	//get all Services
+
+	// get all services
 	services, _, err := zw.client.Children(watchPath)
 	if err != nil {
 		zw.results <- result{nil, err}
 	}
+
 	respChan := make(chan watchResponse)
 
-	//watch the prefix for new child nodes
+	// watch the prefix for new child nodes
 	go zw.watchDir(watchPath, respChan)
 
-	//watch every service
+	// watch every service
 	for _, service := range services {
+
 		sPath := childPath(watchPath, service)
 		go zw.watchDir(sPath, respChan)
+
 		children, _, err := zw.client.Children(sPath)
 		if err != nil {
 			zw.results <- result{nil, err}
 		}
+
 		for _, c := range children {
 			go zw.watchKey(path.Join(sPath, c), respChan)
 		}
+
 	}
 
 	var service *registry.Service
 	var action string
+
 	for {
+
 		select {
 		case <-zw.stop:
 			return
@@ -289,7 +341,13 @@ func (zw *zookeeperWatcher) watch() {
 				service = rsp.service
 			}
 		}
-		zw.results <- result{&registry.Result{Action: action, Service: service}, nil}
+		zw.results <- result{
+			res: &registry.Result{
+				Action: action,
+				Service: service,
+			},
+			err: nil,
+		}
 	}
 }
 

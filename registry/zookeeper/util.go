@@ -38,15 +38,12 @@ func childPath(parent, child string) string {
 	return path.Join(parent, strings.Replace(child, "/", "-", -1))
 }
 
-
 // prefix + "/" + service_name
 func servicePath(s string) string {
 	return path.Join(prefix, strings.Replace(s, "/", "-", -1))
 }
 
-
 func createPath(path string, data []byte, client *zk.Conn) error {
-
 
 	// path 是否已经存在，若是则无需创建，直接返回
 	exists, _, err := client.Exists(path)

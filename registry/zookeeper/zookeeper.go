@@ -10,7 +10,6 @@ import (
 	"github.com/micro/go-micro/config/cmd"
 	"github.com/micro/go-micro/registry"
 	"github.com/samuel/go-zookeeper/zk"
-
 	hash "github.com/mitchellh/hashstructure"
 )
 
@@ -39,7 +38,6 @@ var (
 //		String() string
 //
 //	}
-
 
 type zookeeperRegistry struct {
 
