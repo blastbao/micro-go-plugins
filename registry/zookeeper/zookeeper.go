@@ -18,7 +18,6 @@ var (
 	prefix = "/micro-registry"
 )
 
-
 // zookeeperRegistry 实现了 micro.Registry 接口，能够提供服务发现能力。
 //
 //	type Registry interface {

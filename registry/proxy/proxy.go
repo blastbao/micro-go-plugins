@@ -1,4 +1,4 @@
-// Package proxy is a registry plugin for the micro proxy
+ // Package proxy is a registry plugin for the micro proxy
 package proxy
 
 import (
