@@ -2,7 +2,6 @@
 package selector
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -27,6 +26,8 @@ type selectorCache struct {
 
 	// used to close or reload watcher
 	reload chan bool
+
+
 	exit   chan bool
 }
 
@@ -34,7 +35,11 @@ var (
 	DefaultTTL = time.Minute
 )
 
+
+// 检查 selectorCache.watch() 函数是否已经退出，若已退出返回 true。
 func (c *selectorCache) quit() bool {
+
+	// 非阻塞式调用，若 c.exit 管道 `不可读` 或者 `已关闭`，则 select 会走到 default 分支。
 	select {
 	case <-c.exit:
 		return true
@@ -172,7 +177,7 @@ func (c *selectorCache) del(service string) {
 	delete(c.ttls, service)
 }
 
-//
+// 根据 res.action 和 res.service 更新本地缓存
 func (c *selectorCache) update(res *registry.Result) {
 
 	if res == nil || res.Service == nil {
@@ -212,17 +217,24 @@ func (c *selectorCache) update(res *registry.Result) {
 		}
 	}
 
-	// 根据 res.Action 决定如何处理当前 action
+	// 根据 res.Action 决定如何更新缓存
 	switch res.Action {
 	case "create", "update":
 
-		//
+		// 如果 "service == nil" ，意味着 cache 中没有匹配 res.Service.Version 的 s * registry.Service ，
+		// 此时需要在 cache 中添加新增的 res.Service 信息。
 		if service == nil {
 			c.set(res.Service.Name, append(services, res.Service))
 			return
 		}
 
+		// 如果 "service != nil" ，则需要更新 cache 中的对应项。
+
 		// append old nodes to new service
+
+		// 二重循环：遍历缓存中的旧的 Nodes，逐个检查当前 node 是否存在于 res.Service.Nodes 中，
+		//（1）若存在，则无需添加，直接忽略；
+		//（2）若不存在，则需要添加到 res.Service.Nodes 中
 		for _, cur := range service.Nodes {
 			var seen bool
 			for _, node := range res.Service.Nodes {
@@ -236,18 +248,31 @@ func (c *selectorCache) update(res *registry.Result) {
 			}
 		}
 
+		// 更新缓存
 		services[index] = res.Service
 		c.set(res.Service.Name, services)
 
 
 	case "delete":
+
+		// 如果 "service == nil" ，意味着 cache 中没有匹配 res.Service.Version 的 s * registry.Service ，无需删除
 		if service == nil {
 			return
 		}
 
+		// 如果 "service != nil" ，则需要删除 cache 中的某些 nodes 。
+
+
+
+
 		var nodes []*registry.Node
 
 		// filter cur nodes to remove the dead one
+		//
+
+		// 二重循环：遍历缓存中的旧的 service.Nodes，逐个检查当前 node 是否存在于 res.Service.Nodes 中，
+		//（1）若不存在，则无需删除，临时添加到 nodes 中暂存起来；
+		//（2）若存在，需要删除，不能暂存，直接忽略。
 		for _, cur := range service.Nodes {
 			var seen bool
 			for _, del := range res.Service.Nodes {
@@ -261,7 +286,10 @@ func (c *selectorCache) update(res *registry.Result) {
 			}
 		}
 
+
 		// still got nodes, save and return
+		//
+		// 如果存在未删除的 nodes ，需要将这些 nodes 保留在缓存中。
 		if len(nodes) > 0 {
 			service.Nodes = nodes
 			services[index] = service
@@ -269,14 +297,17 @@ func (c *selectorCache) update(res *registry.Result) {
 			return
 		}
 
+		// 如果所有 nodes 都被删除了，就直接删除缓存项即可。
+		// 下面的操作是在 services[] 中删除当前 service 对应项，如果只有一项，就删除整个缓存。
+
 		// zero nodes left
 
-		// only have one thing to delete
-		// nuke the thing
+		// only have one thing to delete nuke the thing
 		if len(services) == 1 {
 			c.del(service.Name)
 			return
 		}
+
 
 		// still have more than 1 service
 		// check the version and keep what we know
@@ -292,36 +323,60 @@ func (c *selectorCache) update(res *registry.Result) {
 	}
 }
 
+
+
+
+
 // run starts the cache watcher loop
 // it creates a new watcher if there's a problem
 // reloads the watcher if Init is called
 // and returns when Close is called
+
 func (c *selectorCache) run(name string) {
 
 
 	for {
 
-		fmt.Println("[selectorCache][run] begin run.")
-
+		// 1. 检查 selectorCache.watch() 函数是否已经退出，若已退出则 c.quit() 返回 true，这里便直接 return 。
+		//
 		// exit early if already dead
 		if c.quit() {
 			return
 		}
 
+		// 2. 创建一个 zookeeperWatcher 对象 w ，它实现了 micro.Watcher 接口，能够获取注册在 registry 中的服务的zk 节点变更信息，
+		// 所有变更信息可以通过 micro.Watcher 接口的 Next() 来获取，可被用于更新本地缓存信息。
+		//
+		//	type micro.Watcher interface {
+		//		Next() (*Result, error)   	// Next() 是阻塞式的调用
+		//		Stop() 						// Stop()
+		//	}
+		//
 		// create new watcher
 		w, err := c.so.Registry.Watch(
 			registry.WatchService(name),
 		)
 
+		// 3. 如果 Watch() 出错，检查是否需要退出或者重试。
 		if err != nil {
+
+			// 检查 selectorCache.watch() 协程是否已经退出，若已退出则 c.quit() 返回 true，这里便直接 return 。
 			if c.quit() {
 				return
 			}
+
 			log.Log(err)
 			time.Sleep(time.Second)
 			continue
 		}
 
+
+		// 4. 如果 c.so.Registry.Watch() 成功，则启动 c.watch(w) 函数，
+		// 该函数内部会不断的调用 w.Next() 获取服务节点的变更信息，并根据这些变更信息来更新本地缓存；
+		//
+		// 注意，c.watch(w) 是同步的调用，当收到 c.exit、c.reload 信号，或者 w.Next() 返回 error，c.watch(w) 会退出并返回错误。
+		//
+		//
 		// watch for events
 		if err := c.watch(w); err != nil {
 			if c.quit() {
@@ -337,38 +392,53 @@ func (c *selectorCache) run(name string) {
 
 // watch loops the next event and calls update
 // it returns if there's an error
+//
+// 循环不断的调用 w.Next 获取服务节点的变更信息，根据这些变更信息来更新本地缓存；
+// 如果收到了 退出信号 或者 Next() 调用返回错误，就调用 watcher 的 stop 函数，并 return。
+
 func (c *selectorCache) watch(w registry.Watcher) error {
-	quitLoop := make(chan interface{})
+
+	// 用于控制匿名 goroutine 的退出
+	quit := make(chan interface{})
+
+	// watch 函数退出前，defer 会调用 Stop() 且尝试发送信号给 quit 管道，其能够导致后面 goroutine 退出
 	defer func() {
 		w.Stop()
 		select {
-		case quitLoop <- nil:
+		case quit <- nil:
 		default:
 		}
 	}()
 
-	// manage this loop
+	// 这个 goroutine 会一直卡在 select 上，直到收到 exit、quit 或者 reload 信号，会调用 w.Stop() 函数，
+	// 在调用 w.Stop() 之后，后面的 Next() 函数就会返回 error ，从而结束 for 循环并返回。
 	go func() {
-		// wait for exit or reload signal
 		select {
 		case <-c.exit:
+		// 除非 Init() 函数被调用，否则 reload 管道中不会收到信号
 		case <-c.reload:
-		case <-quitLoop:
+		case <-quit:
 		}
-		// stop the watcher
 		w.Stop()
 	}()
 
+	// 主流程
 	for {
+
+		// 阻塞式调用 Next() 函数，返回 res *registry.Result，其包含 res.action 和 res.service.Nodes 等信息；
+		// 在调用 stop() 之后，后序的 Next() 函数就会返回 error，进而导致 for loop 退出。
 		res, err := w.Next()
 		if err != nil {
 			return err
 		}
+
+		// 根据 res.action 和 res.service 更新本地缓存
 		c.update(res)
 	}
 }
 
 func (c *selectorCache) Init(opts ...selector.Option) error {
+
 	for _, o := range opts {
 		o(&c.so)
 	}
@@ -391,6 +461,8 @@ func (c *selectorCache) Options() selector.Options {
 }
 
 // Close stops the watcher and destroys the cache
+//
+// Close 函数清空 cache、watched，且发出 exit signal 以停止 watch 函数的运行
 func (c *selectorCache) Close() error {
 	c.Lock()
 	c.cache = make(map[string][]*registry.Service)
@@ -401,6 +473,7 @@ func (c *selectorCache) Close() error {
 	case <-c.exit:
 		return nil
 	default:
+		// 发送 exit 信号，watch() 会接收到并退出
 		close(c.exit)
 	}
 	return nil

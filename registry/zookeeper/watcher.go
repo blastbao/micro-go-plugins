@@ -51,13 +51,15 @@ type result struct {
 	err error
 }
 
-
 func newZookeeperWatcher(r *zookeeperRegistry, opts ...registry.WatchOption) (registry.Watcher, error) {
+
+	// 初始化配置项
 	var wo registry.WatchOptions
 	for _, o := range opts {
 		o(&wo)
 	}
 
+	// 构造 zookeeperWatcher 结构体
 	zw := &zookeeperWatcher{
 		wo:      wo,
 		client:  r.client,
@@ -65,7 +67,10 @@ func newZookeeperWatcher(r *zookeeperRegistry, opts ...registry.WatchOption) (re
 		results: make(chan result),
 	}
 
+	// 启动监视
 	go zw.watch()
+
+
 	return zw, nil
 }
 
@@ -277,16 +282,87 @@ func (zw *zookeeperWatcher) watchKey(key string, respChan chan watchResponse) {
 }
 
 
+func (zw *zookeeperWatcher) watchShopee() {
 
+
+	// 1. 确定需 watch 的 service(s)
+	//	(1) 如果 option 中指定了 service，就只 watch 它
+	// 	(2) 如果 option 未指定 service，就从 prefix 中拉取全部 services，并全部 watch 它们
+	var services []string
+	if len(zw.wo.Service) > 0 {
+		services = []string{zw.wo.Service}
+	} else {
+		allServices, _, err := zw.client.Children(prefix)
+		if err != nil {
+			zw.results <- result{nil, err}
+		}
+		services = allServices
+	}
+
+	// 2. 每个待 watch 的 service 都是 zk 中的目录节点，其子节点是一个个以 ip:port 命名的内容节点。
+	//	（1）调用 watchDir 来监视每个 service 目录节点
+	//	（2）调用 watchKey 来监视每个 service 目录下的各个内容节点
+	//	（3）所有的节点变更信息会通过管道 respChan 汇总起来
+	respChan := make(chan watchResponse)
+	//watch every service
+	for _, service := range services {
+		//sPath := servicePath(service)
+		sPath := childPath(prefix, service)
+		go zw.watchDir(sPath, respChan)
+		children, _, err := zw.client.Children(sPath)
+		if err != nil {
+			zw.results <- result{nil, err}
+		}
+		for _, c := range children {
+			go zw.watchKey(path.Join(sPath, c), respChan)
+		}
+	}
+
+
+	var service *registry.Service
+	var action string
+	for {
+		// 阻塞式等待数据
+		select {
+		case <-zw.stop:
+			return
+		case rsp := <-respChan:
+			if rsp.err != nil {
+				zw.results <- result{nil, rsp.err}
+				continue
+			}
+			switch rsp.event.Type {
+			case zk.EventNodeDataChanged:
+				action = "update"
+				service = rsp.service
+			case zk.EventNodeDeleted:
+				action = "delete"
+				service = rsp.service
+			case zk.EventNodeCreated:
+				action = "create"
+				service = rsp.service
+			}
+		}
+
+
+		zw.results <- result{
+			res: &registry.Result{
+				Action: action,
+				Service: service,
+			},
+			err: nil,
+		}
+	}
+}
+
+
+// 注：原生的 watch 函数不适用于 shopee zk 的目录结构。
 
 func (zw *zookeeperWatcher) watch() {
-
 	watchPath := prefix
-
 	if len(zw.wo.Service) > 0 {
 		watchPath = servicePath(zw.wo.Service)
 	}
-
 
 	// get all services
 	services, _, err := zw.client.Children(watchPath)

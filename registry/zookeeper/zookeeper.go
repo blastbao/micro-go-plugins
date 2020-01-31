@@ -348,6 +348,13 @@ func (z *zookeeperRegistry) String() string {
 	return "zookeeper"
 }
 
+
+
+//
+// 1. 创建 zookeeperWatcher{} 结构体，该结构体实现了 micro.Watcher 接口，能够获取注册在 registry 中的服务（services）的更新信息。
+// 2. 创建后，会根据 opts 中传入的 service_name 构造服务节点路径，启动后台 goroutine 来 watch 其变更事件。
+// 3. 所有变更信息可以通过 micro.Watcher 接口的 Next() 来获取，可被用于更新本地缓存信息。
+//
 func (z *zookeeperRegistry) Watch(opts ...registry.WatchOption) (registry.Watcher, error) {
 	return newZookeeperWatcher(z, opts...)
 }
