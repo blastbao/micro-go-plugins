@@ -357,10 +357,10 @@ func (c *selectorCache) run(name string) {
 			registry.WatchService(name),
 		)
 
-		// 3. 如果 Watch() 出错，检查是否需要退出或者重试。
+		// 3. 如果 Watch() 出错，检查是否需要退出或者重试。在 zkRegistry 的实现中，这个函数永远不会报错，暂时可以忽略。
 		if err != nil {
 
-			// 检查 selectorCache.watch() 协程是否已经退出，若已退出则 c.quit() 返回 true，这里便直接 return 。
+			// 检查 selectorCache.watch() 是否已经退出，若已退出则 c.quit() 返回 true，这里便直接 return 。
 			if c.quit() {
 				return
 			}
@@ -377,11 +377,21 @@ func (c *selectorCache) run(name string) {
 		// 注意，c.watch(w) 是同步的调用，当收到 c.exit、c.reload 信号，或者 w.Next() 返回 error，c.watch(w) 会退出并返回错误。
 		//
 		//
+		//
+		// 当 c.watch(w) 报错后，先调用 c.quit() 检查是不是 c.Close() 函数主动关闭导致的错误，如果是则直接退出函数；否则，continue 。
+		//
+		//
+		//
+
+
+
 		// watch for events
 		if err := c.watch(w); err != nil {
+
 			if c.quit() {
 				return
 			}
+
 			log.Log(err)
 			continue
 		}
@@ -395,7 +405,12 @@ func (c *selectorCache) run(name string) {
 //
 // 循环不断的调用 w.Next 获取服务节点的变更信息，根据这些变更信息来更新本地缓存；
 // 如果收到了 退出信号 或者 Next() 调用返回错误，就调用 watcher 的 stop 函数，并 return。
-
+//
+//
+// 举例来说，如果 w.Next() 报错，在 return err 之前，defer 块内会调用 w.Stop() 关闭 w 上的监听。
+//
+//
+//
 func (c *selectorCache) watch(w registry.Watcher) error {
 
 	// 用于控制匿名 goroutine 的退出

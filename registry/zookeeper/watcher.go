@@ -2,6 +2,7 @@ package zookeeper
 
 import (
 	"errors"
+	"fmt"
 	"path"
 
 
@@ -34,7 +35,7 @@ type zookeeperWatcher struct {
 	// 退出信号
 	stop    chan bool
 
-
+	//
 	results chan result
 }
 
@@ -98,7 +99,6 @@ func (zw *zookeeperWatcher) watchDir(key string, respChan chan watchResponse) {
 			respChan <- watchResponse{zk.Event{}, nil, err}
 			return
 		}
-
 
 		select {
 
@@ -288,6 +288,8 @@ func (zw *zookeeperWatcher) watchShopee() {
 	// 1. 确定需 watch 的 service(s)
 	//	(1) 如果 option 中指定了 service，就只 watch 它
 	// 	(2) 如果 option 未指定 service，就从 prefix 中拉取全部 services，并全部 watch 它们
+	//
+	// 在 microkit 中，调用 Watch() 一定是指定了某个 service 的，所以这里 services 只有一个元素。
 	var services []string
 	if len(zw.wo.Service) > 0 {
 		services = []string{zw.wo.Service}
@@ -304,7 +306,8 @@ func (zw *zookeeperWatcher) watchShopee() {
 	//	（2）调用 watchKey 来监视每个 service 目录下的各个内容节点
 	//	（3）所有的节点变更信息会通过管道 respChan 汇总起来
 	respChan := make(chan watchResponse)
-	//watch every service
+
+	// watch every service
 	for _, service := range services {
 		//sPath := servicePath(service)
 		sPath := childPath(prefix, service)
@@ -343,7 +346,6 @@ func (zw *zookeeperWatcher) watchShopee() {
 				service = rsp.service
 			}
 		}
-
 
 		zw.results <- result{
 			res: &registry.Result{
@@ -427,13 +429,21 @@ func (zw *zookeeperWatcher) watch() {
 	}
 }
 
-
 func (zw *zookeeperWatcher) Stop() {
 	select {
 	case <-zw.stop:
 		return
 	default:
 		close(zw.stop)
+	}
+
+	for {
+		select {
+		case r := <-zw.results:
+			fmt.Printf("ignore zk result: %v", r)
+		default:
+			return
+		}
 	}
 }
 
